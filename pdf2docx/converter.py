@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+'''PDF to Docx Converter.'''
 import json
 import logging
 import os
@@ -12,9 +12,11 @@ from docx import Document
 from .page.Page import Page
 from .page.Pages import Pages
 
-# check PyMuPDF>=1.19.x
-if list(map(int, fitz.VersionBind.split("."))) < [1, 19, 0]:
-    raise SystemExit("PyMuPDF>=1.19.0 is required for pdf2docx.")
+# check PyMuPDF version
+# 1.19.0 <= v <= 1.23.8, or v>=1.23.16
+v = list(map(int, fitz.VersionBind.split(".")))
+if v < [1,19,0] or [1,23,8]<v<[1,23,16]:
+    raise SystemExit("1.19.0 <= PyMuPDF <= 1.23.8, or PyMuPDF>=1.23.16 is required for pdf2docx.")
 
 # logging
 logging.basicConfig(
@@ -104,7 +106,9 @@ class Converter:
             'extract_stream_table'           : False,  # don't consider stream table when extracting tables
             'parse_lattice_table'            : True,   # whether parse lattice table or not; may destroy the layout if set False
             'parse_stream_table'             : True,   # whether parse stream table or not; may destroy the layout if set False
-            'delete_end_line_hyphen'         : False   # delete hyphen at the end of a line
+            'delete_end_line_hyphen'         : False,  # delete hyphen at the end of a line
+            'raw_exceptions'                 : False,  # Don't swallow exceptions
+            'list_not_table'                 : True,   # Avoid treating bullet list as table.
         }
 
     # -----------------------------------------------------------------------
@@ -180,6 +184,8 @@ class Converter:
             try:
                 page.parse(**kwargs)
             except Exception as e:
+                if kwargs['raw_exceptions']:
+                    raise
                 if not kwargs['debug'] and kwargs['ignore_page_error']:
                     logging.error('Ignore page %d due to parsing page error: %s', pid, e)
                 else:
@@ -188,12 +194,12 @@ class Converter:
         return self
 
 
-    def make_docx(self, docx_filename=None, **kwargs):
+    def make_docx(self, filename_or_stream=None, **kwargs):
         '''Step 4 of converting process: create docx file with converted pages.
         
         Args:
-            docx_filename (str, file-like): docx file to write.
-            kwargs (dict, optional): Configuration parameters. 
+            filename_or_stream (str, file-like): docx file to write.
+            kwargs (dict, optional): Configuration parameters.
         '''
         logging.info(self._color_output('[4/4] Creating pages...'))
 
@@ -204,18 +210,13 @@ class Converter:
         if not parsed_pages:
             raise ConversionException('No parsed pages. Please parse page first.')
 
-        if not docx_filename:
-            raise ConversionException(
-                "No docx file name. Please specify a docx file name or a file-like object to write."
-            )
-
-        # docx file to convert to
-        if hasattr(docx_filename, "write"):
-            filename = docx_filename
-
-        else:
-            filename = docx_filename or f'{self.filename_pdf[0:-len(".pdf")]}.docx' if self.filename_pdf else "output.docx"
-            if os.path.exists(filename): os.remove(filename)
+        if not filename_or_stream:
+            if self.filename_pdf:
+                filename_or_stream = f'{self.filename_pdf[0:-len(".pdf")]}.docx'
+                # remove existing file
+                if os.path.exists(filename_or_stream): os.remove(filename_or_stream)
+            else:
+                raise ConversionException("Please specify a docx file name or a file-like object to write.")
 
         # create page by page        
         docx_file = Document() 
@@ -227,13 +228,15 @@ class Converter:
             try:
                 page.make_docx(docx_file)
             except Exception as e:
+                if kwargs['raw_exceptions']:
+                    raise
                 if not kwargs['debug'] and kwargs['ignore_page_error']:
                     logging.error('Ignore page %d due to making page error: %s', pid, e)
                 else:
                     raise MakedocxException(f'Error when make page {pid}: {e}')
 
         # save docx
-        docx_file.save(filename)
+        docx_file.save(filename_or_stream)
 
 
     # -----------------------------------------------------------------------

@@ -8,7 +8,7 @@ import logging
 from docx.shared import Pt
 from ..common import constants
 from ..common.Collection import ElementCollection
-from ..common.share import (BlockType, lower_round, rgb_value)
+from ..common.share import (BlockType, lower_round, rgb_value, is_list_item)
 from ..common.Block import Block
 from ..common.docx import (reset_paragraph_format, delete_paragraph)
 from ..text.TextBlock import TextBlock
@@ -176,7 +176,7 @@ class Blocks(ElementCollection):
         self.reset(blocks)
 
 
-    def collect_stream_lines(self, potential_shadings:list, line_separate_threshold:float):
+    def collect_stream_lines(self, potential_shadings:list, line_separate_threshold:float, **kwargs):
         '''Collect elements in Line level (line or table bbox), which may contained in a stream table region.
         
         Table may exist on the following conditions:
@@ -230,11 +230,14 @@ class Blocks(ElementCollection):
             bbox = row.bbox
 
             # flow layout or not?
-            if not row.is_flow_layout(line_separate_threshold, cell_layout=cell_layout): 
-                table_lines.extend([sub_line(block) for block in row])
-
-            else:
+            if row.is_flow_layout(line_separate_threshold, cell_layout=cell_layout):
                 close_table()
+            elif kwargs.get('list_not_table') and is_list_item(row[0].text):
+                 # Don't interpret list-style bullet characters/numbers as
+                 # indicating a table.
+                 close_table()
+            else:
+                table_lines.extend([sub_line(block) for block in row])
 
             # contained in shading or not?
             for block in row:

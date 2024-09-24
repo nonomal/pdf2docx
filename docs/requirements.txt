@@ -1,6 +1,9 @@
+pdf2docx
 rst2pdf
 
 # define sphinx versioning
 sphinx==5.3.0
 autodoc
-sphinx_rtd_theme
+furo
+sphinx_copybutton
+sphinxcontrib.apidoc
